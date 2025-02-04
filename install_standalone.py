@@ -63,9 +63,6 @@ def install_to_maya(maya_path, version):
     # Get the directory where this script is located
     tool_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Create scripts directory if it doesn't exist
-    os.makedirs(scripts_path, exist_ok=True)
-    
     # Also create a modules directory if it doesn't exist
     modules_path = os.path.join(os.path.dirname(scripts_path), "modules")
     os.makedirs(modules_path, exist_ok=True)
@@ -78,31 +75,46 @@ scripts: {tool_dir}"""
     with open(mod_file_path, 'w') as f:
         f.write(mod_content)
 
-    # Create/update userSetup.py
+    # Create/update userSetup.py with plugin system support
     usersetup_path = os.path.join(scripts_path, "userSetup.py")
     setup_code = '''import maya.cmds as cmds
 import maya.mel as mel
 import maya.utils
 import importlib
 
-def load_asu_dsl_shelf():
-    """Load ASU DSL shelf"""
+def load_asu_dsl_tools():
+    """Load ASU DSL tools and create shelf"""
     try:
-        import ui.shelf
-        importlib.reload(ui.shelf)  # Proper way to reload in Python 3
-        ui.shelf.create_shelf()
+        # Import and reload the plugin manager
+        import core.plugin_manager as plugin_manager
+        importlib.reload(plugin_manager)
+        
+        # Discover and load all tools
+        plugin_manager.discover_tools()
+        
+        # Create the shelf with all discovered tools
+        plugin_manager.create_shelf()
+        
     except Exception as e:
-        cmds.warning(f"Failed to load ASU DSL shelf: {str(e)}")
+        cmds.warning(f"Failed to load ASU DSL tools: {str(e)}")
         import traceback
         traceback.print_exc()
 
 # Use executeDeferred to ensure UI exists before creating shelf
-maya.utils.executeDeferred(load_asu_dsl_shelf)
+maya.utils.executeDeferred(load_asu_dsl_tools)
 '''
     
     # Write or update userSetup.py
-    with open(usersetup_path, 'w') as f:
-        f.write(setup_code)
+    if os.path.exists(usersetup_path):
+        with open(usersetup_path, 'r') as f:
+            existing_content = f.read()
+        if 'import ui.shelf' in existing_content:
+            # Update existing file to use new plugin system
+            with open(usersetup_path, 'w') as f:
+                f.write(setup_code)
+    else:
+        with open(usersetup_path, 'w') as f:
+            f.write(setup_code)
     
     print(f"Successfully installed for Maya {version}")
     return True

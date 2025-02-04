@@ -1,11 +1,12 @@
 import maya.cmds as cmds
 import os
+from ..core.exporter import export_fbx, export_ascii, export_fbx_silent
+from ..core.cleanup import cleanup_scene
+from ..config.settings import ConfigManager
+from .settings_dialog import SettingsDialog
+from .utils import try_auto_select_rig
 
-from core.exporter import export_fbx, export_ascii, export_fbx_silent
-from core.cleanup import cleanup_scene
-from config.settings import ConfigManager
-from ui.settings_dialog import SettingsDialog
-from ui.utils import try_auto_select_rig 
+# No changes needed for cleanup.py, exporter.py, or utils.py as they don't have tool-specific imports
 
 class ExportToolGUI:
     def __init__(self):
@@ -86,7 +87,7 @@ class ExportToolGUI:
 
     def export_fbx(self, *args):
         """Handle FBX export with current settings."""
-        from core.rig_utils import ensure_rig_selected
+        from ..core.rig_utils import ensure_rig_selected
         
         # Check if we have a rig selected or can select one
         if not ensure_rig_selected():
