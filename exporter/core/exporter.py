@@ -1,6 +1,7 @@
 import maya.cmds as cmds
 import os
 import maya.mel as mel
+from . import rig_utils
 
 def suppress_warnings():
     cmds.scriptEditorInfo(suppressWarnings=True, suppressInfo=True, suppressResults=True)
