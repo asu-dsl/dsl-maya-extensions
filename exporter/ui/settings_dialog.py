@@ -1,5 +1,5 @@
 import maya.cmds as cmds
-from config.settings import ConfigManager
+from ..config.settings import ConfigManager
 
 class SettingsDialog:
     def __init__(self):
