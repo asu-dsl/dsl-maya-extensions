@@ -2,7 +2,7 @@
 
 TOOL_CONFIG = {
     'label': 'Playblast',
-    'command': 'from playblast.ui.gui import show_gui; show_gui()',
+    'command': 'from playblast.ui.playblast_gui import show_gui; show_gui()',
     'icon': 'ui/buttons/camera.png',
-    'annotation': 'Quick Playblast Tool'
+    'annotation': 'Create high-quality playblasts with multi-view support.'
 }
