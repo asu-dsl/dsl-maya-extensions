@@ -1,6 +1,6 @@
 import maya.cmds as cmds
 import os
-from core.playblast_core import one_click_quad_ffmpeg
+from playblast.core.playblast_core import one_click_quad_ffmpeg
 
 class PlayblastGUI:
     def __init__(self):
