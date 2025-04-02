@@ -1,1 +1,1 @@
-from . import playblast
+from . import playblast_core
