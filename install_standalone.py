@@ -70,10 +70,11 @@ def install_to_maya(maya_path, version):
     # Create a .mod file for Maya to recognize our tool
     mod_file_path = os.path.join(modules_path, "asu_dsl_tools.mod")
     mod_content = f"""+ ASU_DSL_TOOLS 1.0 {tool_dir}
-scripts: {tool_dir}"""
-    
-    with open(mod_file_path, 'w') as f:
+    scripts: {tool_dir}"""
+
+    with open(mod_file_path, 'w', encoding='utf-8') as f:
         f.write(mod_content)
+
 
     # Create/update userSetup.py with plugin system support
     usersetup_path = os.path.join(scripts_path, "userSetup.py")
@@ -106,14 +107,14 @@ maya.utils.executeDeferred(load_asu_dsl_tools)
     
     # Write or update userSetup.py
     if os.path.exists(usersetup_path):
-        with open(usersetup_path, 'r') as f:
+        with open(usersetup_path, 'r', encoding='utf-8', errors='ignore') as f:
             existing_content = f.read()
         if 'import ui.shelf' in existing_content:
             # Update existing file to use new plugin system
-            with open(usersetup_path, 'w') as f:
+            with open(usersetup_path, 'w', encoding='utf-8') as f:
                 f.write(setup_code)
     else:
-        with open(usersetup_path, 'w') as f:
+        with open(usersetup_path, 'w', encoding='utf-8') as f:
             f.write(setup_code)
     
     print(f"Successfully installed for Maya {version}")
