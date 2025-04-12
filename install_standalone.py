@@ -45,11 +45,17 @@ def find_maya_installations():
     ]
     
     print("Searching for Maya installations...")
-    for path in search_paths:
+    for i, path in enumerate(search_paths):
         if os.path.exists(path):
             print(f"Scanning {path}...")
             found_versions = search_directory_for_maya(path)
-            maya_versions.update(found_versions)
+            if found_versions:
+                maya_versions.update(found_versions)
+                # Only stop early if we are NOT on the final fallback path
+                if i < len(search_paths) - 1:
+                    print(f"Found Maya installations. Skipping deeper search.")
+                    break
+
     
     return maya_versions
 

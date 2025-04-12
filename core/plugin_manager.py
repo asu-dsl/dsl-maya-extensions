@@ -55,13 +55,29 @@ def discover_tools():
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 
-                # Register the tool if it has the required attributes
                 if hasattr(module, 'TOOL_CONFIG'):
-                    # Update icon path to be relative to the tool directory
+                    # Copy config from tool
                     config = module.TOOL_CONFIG.copy()
+
+                    # Patch MEL path in command if 'mel/' is used
+                    if 'command' in config and 'mel/' in config['command']:
+                        config['command'] = config['command'].replace(
+                            'mel/',
+                            os.path.join(tool_dir, 'mel').replace('\\', '/') + '/'
+                        )
+
+                    # Patch icon path
                     if 'icon' in config:
                         config['icon'] = os.path.join(tool_dir, config['icon'])
-                    
+
+                    # Add tool's mel directory to MAYA_SCRIPT_PATH using Python (not MEL!)
+                    mel_dir = os.path.join(tool_dir, 'mel').replace("\\", "/")
+                    if os.path.exists(mel_dir):
+                        current_path = os.environ.get("MAYA_SCRIPT_PATH", "")
+                        if mel_dir not in current_path:
+                            os.environ["MAYA_SCRIPT_PATH"] = current_path + ";" + mel_dir
+
+                    # Register the tool
                     registry.register_tool(item, config)
                 else:
                     print(f"Warning: {item} missing TOOL_CONFIG in tool_config.py")
