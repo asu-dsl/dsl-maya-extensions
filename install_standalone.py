@@ -1,205 +1,233 @@
 import os
-import sys
-import winreg
 from pathlib import Path
 
-def search_directory_for_maya(start_path):
+def search_directory_for_maya(start: Path) -> dict:
     """Recursively search a directory for Maya installations."""
     maya_versions = {}
-    
     try:
-        # First check if this is a Maya documents directory
-        if os.path.basename(start_path) == "maya":
-            # Check immediate subdirectories for year folders
-            for item in os.listdir(start_path):
-                if item.isdigit():  # Year folders are typically just numbers (2024, 2025, etc.)
-                    maya_versions[item] = start_path
-                    print(f"Found Maya {item} user directory in: {start_path}")
-        
-        # Then look for Maya binary installations
-        for root, dirs, files in os.walk(start_path):
-            if 'maya.exe' in files or 'mayapy.exe' in files:
-                path_parts = root.lower().split(os.sep)
-                for part in path_parts:
-                    if part.startswith('maya20'):  # Match Maya year versions
-                        version = part.replace('maya', '')
-                        if version.isdigit():
-                            maya_versions[version] = root
-                            print(f"Found Maya {version} installation in: {root}")
+        # If this is the user's maya docs folder, look for year subfolders
+        if start.name.lower() == "maya":
+            for sub in start.iterdir():
+                if sub.is_dir() and sub.name.isdigit():
+                    maya_versions[sub.name] = start
+
+        # Walk looking for maya.exe or mayapy.exe
+        for root, dirs, files in os.walk(start):
+            if "maya.exe" in files or "mayapy.exe" in files:
+                parts = Path(root).parts
+                for part in parts:
+                    if part.lower().startswith("maya20"):
+                        ver = part.lower().replace("maya", "")
+                        if ver.isdigit():
+                            maya_versions[ver] = root
                             break
     except Exception as e:
-        print(f"Error scanning {start_path}: {e}")
-    
+        print(f"[Warning] Error scanning {start}: {e}")
     return maya_versions
 
-def find_maya_installations():
-    """Find all Maya installations on the system."""
-    maya_versions = {}
-    
-    # Define search paths
-    search_paths = [
-        os.path.expanduser("~/Documents/maya"),     # User maya directory
-        "C:/Program Files/Autodesk",               # Program Files
-        "C:/Autodesk",                            # Alternative installation
-        os.path.expanduser("~"),                  # User's home directory
+def find_maya_installations() -> dict:
+    """Return a dict of installed Maya versions: {version: path}."""
+    candidates = [
+        Path.home() / "Documents" / "maya",
+        Path("C:/Program Files/Autodesk"),
+        Path("C:/Autodesk"),
+        Path.home(),
     ]
-    
-    print("Searching for Maya installations...")
-    for i, path in enumerate(search_paths):
-        if os.path.exists(path):
-            print(f"Scanning {path}...")
-            found_versions = search_directory_for_maya(path)
-            if found_versions:
-                maya_versions.update(found_versions)
-                # Only stop early if we are NOT on the final fallback path
-                if i < len(search_paths) - 1:
-                    print(f"Found Maya installations. Skipping deeper search.")
+    found = {}
+    print("Searching for Maya installations…")
+    for i, p in enumerate(candidates):
+        if p.exists():
+            print(f"  Scanning {p} …")
+            vs = search_directory_for_maya(p)
+            if vs:
+                found.update(vs)
+                if i < len(candidates) - 1:
+                    print("  Found Maya installs; skipping deeper search.")
                     break
+    return found
 
+import os
+from pathlib import Path
+import shutil
+
+def install_to_maya(maya_version):
+    """Install to a specific Maya version with direct path checks."""
+    print(f"\n→ Installing into Maya {maya_version}…")
+
+    # Paths in the user Documents tree
+    scripts_dir = Path.home() / "Documents" / "maya" / maya_version / "scripts"
+    modules_dir = Path.home() / "Documents" / "maya" / maya_version / "modules"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    modules_dir.mkdir(parents=True, exist_ok=True)
     
-    return maya_versions
-
-def install_to_maya(maya_path, version):
-    """Install the tool for a specific Maya version."""
-    scripts_path = os.path.join(os.path.expanduser("~/Documents/maya"), version, "scripts")
+    # Get current script directory (absolute path)
+    tool_root = os.path.dirname(os.path.abspath(__file__))
     
-    # Create scripts directory if it doesn't exist
-    os.makedirs(scripts_path, exist_ok=True)
+    # Check if 'core' directory exists, create it if not
+    core_dir = os.path.join(tool_root, "core")
+    if not os.path.exists(core_dir):
+        print(f"  • Creating missing 'core' directory at: {core_dir}")
+        os.makedirs(core_dir, exist_ok=True)
     
-    # Get the directory where this script is located
-    tool_dir = os.path.dirname(os.path.abspath(__file__))
+    # Verify plugin_manager.py exists in core directory
+    plugin_manager_path = os.path.join(core_dir, "plugin_manager.py")
+    if not os.path.exists(plugin_manager_path):
+        # Try to locate it elsewhere
+        for root, dirs, files in os.walk(tool_root):
+            if "plugin_manager.py" in files:
+                source_path = os.path.join(root, "plugin_manager.py")
+                print(f"  • Found plugin_manager.py at: {source_path}")
+                print(f"  • Copying to core directory")
+                shutil.copy2(source_path, plugin_manager_path)
+                break
+        else:
+            # Create a simple version if not found
+            print(f"  • Creating basic plugin_manager.py in core directory")
+            with open(plugin_manager_path, "w", encoding="utf-8") as f:
+                f.write('''import os
+import maya.cmds as cmds
+
+class ToolRegistry:
+    """Registry for all tool plugins that can be added to the shelf."""
     
-    # Also create a modules directory if it doesn't exist
-    modules_path = os.path.join(os.path.dirname(scripts_path), "modules")
-    os.makedirs(modules_path, exist_ok=True)
-
-    # Create a .mod file for Maya to recognize our tool
-    mod_file_path = os.path.join(modules_path, "asu_dsl_tools.mod")
-    mod_content = f"""+ ASU_DSL_TOOLS 1.0 {tool_dir}
-    scripts: {tool_dir}"""
-
-    with open(mod_file_path, 'w', encoding='utf-8') as f:
-        f.write(mod_content)
-
-
-    # Create/update userSetup.py with plugin system support
-    usersetup_path = os.path.join(scripts_path, "userSetup.py")
-    setup_code = '''import maya.cmds as cmds
-import maya.mel as mel
-import maya.utils
-import importlib
-
-def load_asu_dsl_tools():
-    """Load ASU DSL tools and create shelf"""
-    try:
-        # Import and reload the plugin manager
-        import core.plugin_manager as plugin_manager
-        importlib.reload(plugin_manager)
+    def __init__(self):
+        self.tools = {}
         
-        # Discover and load all tools
-        plugin_manager.discover_tools()
-        
-        # Create the shelf with all discovered tools
-        plugin_manager.create_shelf()
-        
-    except Exception as e:
-        cmds.warning(f"Failed to load ASU DSL tools: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-# Use executeDeferred to ensure UI exists before creating shelf
-maya.utils.executeDeferred(load_asu_dsl_tools)
-'''
-    
-    # Write or update userSetup.py
-    if os.path.exists(usersetup_path):
-        with open(usersetup_path, 'r', encoding='utf-8', errors='ignore') as f:
-            existing_content = f.read()
-        if 'import ui.shelf' in existing_content:
-            # Update existing file to use new plugin system
-            with open(usersetup_path, 'w', encoding='utf-8') as f:
-                f.write(setup_code)
-    else:
-        with open(usersetup_path, 'w', encoding='utf-8') as f:
-            f.write(setup_code)
-    
-    print(f"Successfully installed for Maya {version}")
-    return True
-
-def main():
-    print("ASU DSL Maya Tool Installer")
-    print("-" * 50)
-    
-    # Find Maya installations
-    maya_versions = find_maya_installations()
-    
-    if not maya_versions:
-        print("\nNo Maya installations found automatically!")
-        print("Options:")
-        print("1. Enter path to Maya directory manually")
-        print("2. Exit")
-        choice = input("\nSelect option (1-2) or press Enter to exit: ").strip()
-        
-        if not choice or choice == "2":
+    def register_tool(self, tool_id, tool_config):
+        if not all(key in tool_config for key in ['label', 'command']):
+            print(f"Warning: Tool {tool_id} missing required configuration. Skipping.")
             return
             
-        if choice == "1":
-            while True:
-                path = input("\nEnter path to Maya directory (or press Enter to cancel): ").strip()
-                if not path:
-                    return
-                    
-                if os.path.exists(path):
-                    found_versions = search_directory_for_maya(path)
-                    if found_versions:
-                        maya_versions.update(found_versions)
-                        print(f"\nFound Maya installation(s) in specified path!")
-                        break
-                    else:
-                        print("\nNo Maya installation found in specified path.")
-                        continue
-                else:
-                    print("\nSpecified path does not exist. Please try again.")
+        self.tools[tool_id] = tool_config
+        print(f"Registered tool: {tool_id}")
+
+# Global registry instance
+registry = ToolRegistry()
+
+def discover_tools():
+    """Scan for and load all tool plugins."""
+    print("Discover tools called - basic implementation")
     
-    # Sort versions
-    versions = sorted(maya_versions.keys())
+def create_shelf():
+    """Creates the shelf with all registered tools."""
+    shelf_name = "ASU_DSL_Shelf"
     
-    if len(versions) == 1:
-        version = versions[0]
-        print(f"Found Maya {version}")
-        print(f"Installing...")
-        install_to_maya(maya_versions[version], version)
-    else:
-        print("\nFound multiple Maya versions:")
-        for i, version in enumerate(versions, 1):
-            print(f"{i}. Maya {version}")
-        print(f"{len(versions) + 1}. All versions")
-        print("0. Cancel")
+    # Delete existing shelf
+    if cmds.shelfLayout(shelf_name, exists=True):
+        cmds.deleteUI(shelf_name)
+    
+    # Get all shelves layouts
+    all_shelves = cmds.layout('ShelfLayout', query=True, childArray=True)
+    if not all_shelves:
+        cmds.warning("Could not find main shelf layout")
+        return
         
-        while True:
-            choice = input("\nSelect Maya version to install for (enter number): ")
-            if choice == "0":
-                return
-            try:
-                choice = int(choice)
-                if choice == len(versions) + 1:
-                    # Install for all versions
-                    for version in versions:
-                        print(f"\nInstalling for Maya {version}...")
-                        install_to_maya(maya_versions[version], version)
-                    break
-                elif 1 <= choice <= len(versions):
-                    version = versions[choice - 1]
-                    print(f"\nInstalling for Maya {version}...")
-                    install_to_maya(maya_versions[version], version)
-                    break
-                else:
-                    print("Invalid selection. Please try again.")
-            except ValueError:
-                print("Invalid input. Please enter a number.")
+    # Create new shelf
+    shelf = cmds.shelfLayout(shelf_name, parent='ShelfLayout')
     
-    print("\nInstallation complete!")
-    input("Press Enter to exit...")
+    print(f"Created shelf with {len(registry.tools)} tools")
+''')
+    
+    # Create a proper __init__.py in the core directory
+    init_file = os.path.join(core_dir, "__init__.py")
+    with open(init_file, "w", encoding="utf-8") as f:
+        f.write('"""ASU DSL Tools core package."""\n')
+    
+    # Write the module file with direct path
+    mod_file = os.path.join(modules_dir, "asu_dsl_tools.mod")
+    with open(mod_file, "w", encoding="utf-8") as f:
+        tool_root_path = tool_root.replace("\\", "/")
+        f.write(f"+ ASU_DSL_TOOLS 1.0 {tool_root_path}\n")
+        f.write("python: .\n")
+        f.write("scripts: .\n")
+    
+    # Create a robust userSetup.py
+    usersetup = os.path.join(scripts_dir, "userSetup.py")
+    tool_root_path = tool_root.replace("\\", "/")
+    
+    setup_code = f'''import os
+import sys
+import maya.cmds as cmds
+import traceback
+
+def load_asu_dsl_tools(*args):
+    """Deferred loader for ASU DSL Tools."""
+    try:
+        # Direct path approach - explicitly add the tool root to sys.path
+        tool_path = "{tool_root_path}"
+        if tool_path not in sys.path:
+            sys.path.insert(0, tool_path)
+            print(f"ASU_DSL_TOOLS: Added {{tool_path}} to Python path")
+        
+        # Also verify the core directory is directly in sys.path
+        core_path = os.path.join("{tool_root_path}", "core")
+        parent_path = os.path.dirname("{tool_root_path}")
+        
+        # Print some diagnostic info
+        print(f"Tool path: {{tool_path}}")
+        print(f"Core path: {{core_path}}")
+        
+        # Check if core directory exists
+        if not os.path.exists(core_path):
+            print(f"ERROR: Core directory doesn't exist at {{core_path}}")
+            return
+            
+        # Check for plugin_manager.py
+        plugin_manager_file = os.path.join(core_path, "plugin_manager.py")
+        if not os.path.exists(plugin_manager_file):
+            print(f"ERROR: plugin_manager.py doesn't exist at {{plugin_manager_file}}")
+            return
+            
+        # Print current sys.path
+        print("Current sys.path:")
+        for i, path in enumerate(sys.path):
+            print(f"  {{i}}: {{path}}")
+            
+        # Try to import the plugin manager
+        print("Importing core.plugin_manager...")
+        import core.plugin_manager as plugin_manager
+        
+        print("ASU_DSL_TOOLS: Successfully imported plugin_manager")
+        
+        # Call the plugin manager functions
+        plugin_manager.discover_tools()
+        plugin_manager.create_shelf()
+        
+        print("ASU_DSL_TOOLS: Successfully loaded!")
+    except Exception as e:
+        cmds.warning(f"Failed to load ASU DSL tools: {{e}}")
+        traceback.print_exc()
+
+# Register the function to be called after Maya UI is initialized
+cmds.evalDeferred(load_asu_dsl_tools, lowestPriority=True)
+print("ASU_DSL_TOOLS: Registered for deferred loading")
+'''
+    
+    with open(usersetup, "w", encoding="utf-8") as f:
+        f.write(setup_code)
+    
+    print(f"  • Wrote userSetup.py: {usersetup}")
+    print(f"  • Wrote module file: {mod_file}")
+    print(f"  • Created/verified core/__init__.py: {init_file}")
+    print(f"  • Created/verified core/plugin_manager.py: {plugin_manager_path}")
+    
+    print(f"\n✅ Installation successful for Maya {maya_version}")
+    print(f"   Tool root: {tool_root}")
+
+def main():
+    print("=== ASU DSL Maya Tool Directory Structure Fixer ===")
+    
+    # Prompt for Maya version
+    maya_version = input("Enter Maya version (e.g., 2024): ").strip()
+    
+    if not maya_version:
+        print("No version specified. Using 2024 as default.")
+        maya_version = "2024"
+        
+    install_to_maya(maya_version)
+    
+    print("\nInstallation complete! Press Enter to exit.")
+    input()
 
 if __name__ == "__main__":
     main()
